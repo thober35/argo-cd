@@ -912,6 +912,11 @@ func (r *ApplicationSetReconciler) buildAppSyncMap(ctx context.Context, applicat
 	for i := range appDependencyList {
 		// set the syncEnabled boolean for every Application in the current step
 		for _, appName := range appDependencyList[i] {
+			if app, ok := appMap[appName]; ok {
+				if syncEnabled {
+					syncEnabled = r.validateSyncWindowOnApplication(ctx, &applicationSet, app)
+				}
+			}
 			appSyncMap[appName] = syncEnabled
 		}
 
@@ -952,6 +957,18 @@ func appSyncEnabledForNextStep(appset *argov1alpha1.ApplicationSet, app argov1al
 	}
 
 	return true
+}
+
+func (r *ApplicationSetReconciler) validateSyncWindowOnApplication(ctx context.Context, appset *argov1alpha1.ApplicationSet, app argov1alpha1.Application) bool {
+	syncEnabled := true
+	project, err := r.ArgoAppClientset.ArgoprojV1alpha1().AppProjects(appset.Namespace).Get(ctx, app.Spec.GetProject(), metav1.GetOptions{})
+	if err == nil {
+		syncEnabled = project.Spec.SyncWindows.Matches(app.DeepCopy()).CanSync(false)
+		if !syncEnabled {
+			log.Infof("syncWindow active. app=%s appSet=%s project=%s", app.Name, appset.Name, app.Spec.Project)
+		}
+	}
+	return syncEnabled
 }
 
 func progressiveSyncsStrategyEnabled(appset *argov1alpha1.ApplicationSet, strategyType string) bool {
@@ -1028,7 +1045,7 @@ func (r *ApplicationSetReconciler) updateApplicationSetApplicationStatus(ctx con
 		}
 
 		if currentAppStatus.Status == "Pending" {
-			if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.After(currentAppStatus.LastTransitionTime.Time) {
+			if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.After(currentAppStatus.LastTransitionTime.Time) || (operationPhaseString == "Succeeded" && !appOutdated) { // (operationPhaseString == "Succeeded" && !appOutdated) was added  {
 				log.Infof("Application %v has completed a sync successfully, updating its ApplicationSet status to Progressing", app.Name)
 				currentAppStatus.LastTransitionTime = &now
 				currentAppStatus.Status = "Progressing"
