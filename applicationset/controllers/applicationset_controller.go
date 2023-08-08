@@ -950,6 +950,11 @@ func (r *ApplicationSetReconciler) buildAppSyncMap(ctx context.Context, applicat
 	for i := range appDependencyList {
 		// set the syncEnabled boolean for every Application in the current step
 		for _, appName := range appDependencyList[i] {
+            if app, ok := appMap[appName]; ok {
+                if syncEnabled {
+                    syncEnabled = r.validateSyncWindowOnApplication(ctx, &applicationSet, app)
+                }
+            }
 			appSyncMap[appName] = syncEnabled
 		}
 
@@ -990,6 +995,18 @@ func appSyncEnabledForNextStep(appset *argov1alpha1.ApplicationSet, app argov1al
 	}
 
 	return true
+}
+
+func (r *ApplicationSetReconciler) validateSyncWindowOnApplication(ctx context.Context, appset *argov1alpha1.ApplicationSet, app argov1alpha1.Application) bool {
+	syncEnabled := true
+	project, err := r.ArgoAppClientset.ArgoprojV1alpha1().AppProjects(appset.Namespace).Get(ctx, app.Spec.GetProject(), metav1.GetOptions{})
+	if err == nil {
+		syncEnabled = project.Spec.SyncWindows.Matches(app.DeepCopy()).CanSync(false)
+		if !syncEnabled {
+			log.Infof("syncWindow active. app=%s appSet=%s project=%s", app.Name, appset.Name, app.Spec.Project)
+		}
+	}
+	return syncEnabled
 }
 
 func progressiveSyncsStrategyEnabled(appset *argov1alpha1.ApplicationSet, strategyType string) bool {
@@ -1068,6 +1085,7 @@ func (r *ApplicationSetReconciler) updateApplicationSetApplicationStatus(ctx con
 		if currentAppStatus.Status == "Pending" {
 			// check for successful syncs started less than 10s before the Application transitioned to Pending
 			// this covers race conditions where syncs initiated by RollingSync miraculously have a sync time before the transition to Pending state occurred (could be a few seconds)
+			// TODO: if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.After(currentAppStatus.LastTransitionTime.Time) || (operationPhaseString == "Succeeded" && !appOutdated) { // (operationPhaseString == "Succeeded" && !appOutdated) was added  {
 			if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.Add(time.Duration(10)*time.Second).After(currentAppStatus.LastTransitionTime.Time) {
 				if !app.Status.OperationState.StartedAt.After(currentAppStatus.LastTransitionTime.Time) {
 					log.Warnf("Application %v was synced less than 10s prior to entering Pending status, we'll assume the AppSet controller triggered this sync and update its status to Progressing", app.Name)
