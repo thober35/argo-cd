@@ -1085,8 +1085,8 @@ func (r *ApplicationSetReconciler) updateApplicationSetApplicationStatus(ctx con
 		if currentAppStatus.Status == "Pending" {
 			// check for successful syncs started less than 10s before the Application transitioned to Pending
 			// this covers race conditions where syncs initiated by RollingSync miraculously have a sync time before the transition to Pending state occurred (could be a few seconds)
-			// TODO: if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.After(currentAppStatus.LastTransitionTime.Time) || (operationPhaseString == "Succeeded" && !appOutdated) { // (operationPhaseString == "Succeeded" && !appOutdated) was added  {
-			if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.Add(time.Duration(10)*time.Second).After(currentAppStatus.LastTransitionTime.Time) {
+			// FIXME thober35: This workaround is necessary due to my syncWindow Fix. Remove "|| (operationPhaseString == "Succeeded" && !appOutdated)" when SyncWindows are added to progressiveSyncs via https://github.com/argoproj/argo-cd/issues/11817
+			if operationPhaseString == "Succeeded" && app.Status.OperationState.StartedAt.Add(time.Duration(10)*time.Second).After(currentAppStatus.LastTransitionTime.Time) || (operationPhaseString == "Succeeded" && !appOutdated) {
 				if !app.Status.OperationState.StartedAt.After(currentAppStatus.LastTransitionTime.Time) {
 					log.Warnf("Application %v was synced less than 10s prior to entering Pending status, we'll assume the AppSet controller triggered this sync and update its status to Progressing", app.Name)
 				}
