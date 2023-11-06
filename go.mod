@@ -286,6 +286,9 @@ require (
 )
 
 replace (
+	// temp until PR is merged
+	github.com/argoproj/gitops-engine v0.7.1-0.20230906152414-b0fffe419a0f => github.com/thober35/gitops-engine v0.7.8
+
 	// https://github.com/golang/go/issues/33546#issuecomment-519656923
 	github.com/go-check/check => github.com/go-check/check v0.0.0-20180628173108-788fd7840127
 
