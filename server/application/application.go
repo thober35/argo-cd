@@ -1727,7 +1727,7 @@ func (s *Server) Sync(ctx context.Context, syncReq *application.ApplicationSyncR
 	}
 
 	s.inferResourcesStatusHealth(a)
-
+	// TODO
 	if !proj.Spec.SyncWindows.Matches(a).CanSync(true) {
 		return a, status.Errorf(codes.PermissionDenied, "cannot sync: blocked by sync window")
 	}

@@ -1354,7 +1354,7 @@ func (r *ApplicationSetReconciler) syncValidApplications(ctx context.Context, ap
 		// check appSyncMap to determine which Applications are ready to be updated and which should be skipped
 		if appSyncMap[validApps[i].Name] && appMap[validApps[i].Name].Status.Sync.Status == "OutOfSync" && appSetStatusPending {
 			log.Infof("triggering sync for application: %v, prune enabled: %v", validApps[i].Name, pruneEnabled)
-			validApps[i], _ = syncApplication(validApps[i], pruneEnabled)
+			validApps[i], _ = syncApplication(validApps[i], pruneEnabled) // TODO: maybe here
 		}
 		rolloutApps = append(rolloutApps, validApps[i])
 	}
@@ -1363,6 +1363,11 @@ func (r *ApplicationSetReconciler) syncValidApplications(ctx context.Context, ap
 
 // used by the RollingSync Progressive Sync strategy to trigger a sync of a particular Application resource
 func syncApplication(application argov1alpha1.Application, prune bool) (argov1alpha1.Application, error) {
+	//if !project.Spec.SyncWindows.Matches(app).CanSync(false) {
+	//	if app.Operation != nil {
+	//		log.Info("Thober35 Operation not null")
+	//	}
+	//}
 
 	operation := argov1alpha1.Operation{
 		InitiatedBy: argov1alpha1.OperationInitiator{

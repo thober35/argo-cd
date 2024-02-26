@@ -380,10 +380,16 @@ func (ctrl *ApplicationController) handleObjectUpdated(managedByApp map[string]b
 		}
 
 		// Enforce application's permission for the source namespace
-		_, err = ctrl.getAppProj(app)
+		project, err := ctrl.getAppProj(app)
 		if err != nil {
 			log.Errorf("Unable to determine project for app '%s': %v", app.QualifiedName(), err)
 			continue
+		}
+
+		if !project.Spec.SyncWindows.Matches(app).CanSync(false) {
+			if app.Operation != nil {
+				log.Info("Thober35 Operation not null")
+			}
 		}
 
 		level := ComparisonWithNothing
@@ -812,7 +818,7 @@ func (ctrl *ApplicationController) requestAppRefresh(appName string, compareWith
 			ctrl.appOperationQueue.AddAfter(key, *after)
 		} else {
 			ctrl.appRefreshQueue.Add(key)
-			ctrl.appOperationQueue.Add(key)
+			ctrl.appOperationQueue.Add(key) // TODO: 231130 FAULTY CORRECT
 		}
 	}
 }
@@ -828,7 +834,7 @@ func (ctrl *ApplicationController) isRefreshRequested(appName string) (bool, Com
 }
 
 func (ctrl *ApplicationController) processAppOperationQueueItem() (processNext bool) {
-	appKey, shutdown := ctrl.appOperationQueue.Get()
+	appKey, shutdown := ctrl.appOperationQueue.Get() // TODO: here 231129
 	if shutdown {
 		processNext = false
 		return
@@ -1281,7 +1287,7 @@ func (ctrl *ApplicationController) processRequestedAppOperation(app *appv1.Appli
 }
 
 func (ctrl *ApplicationController) setOperationState(app *appv1.Application, state *appv1.OperationState) {
-	logCtx := log.WithFields(log.Fields{"application": app.Name, "appNamespace": app.Namespace, "project": app.Spec.Project})
+	logCtx := log.WithFields(log.Fields{"application": app.Name, "appNamespace": app.Namespace, "project": app.Spec.Project}) // TODO 13:50
 
 	if state.Phase == "" {
 		// expose any bugs where we neglect to set phase
@@ -1334,7 +1340,7 @@ func (ctrl *ApplicationController) setOperationState(app *appv1.Application, sta
 		return nil
 	})
 
-	logCtx.Infof("updated '%s' operation (phase: %s)", app.QualifiedName(), state.Phase)
+	logCtx.Infof("updated '%s' operation (phase: %s)", app.QualifiedName(), state.Phase) // TODO: 13:50
 	if state.Phase.Completed() {
 		eventInfo := argo.EventInfo{Reason: argo.EventReasonOperationCompleted}
 		var messages []string
@@ -1478,6 +1484,7 @@ func (ctrl *ApplicationController) processAppRefreshQueueItem() (processNext boo
 	}
 	now := metav1.Now()
 
+	// TODO: maybe check here.
 	compareResult := ctrl.appStateManager.CompareAppState(app, project, revisions, sources,
 		refreshType == appv1.RefreshTypeHard,
 		comparisonLevel == CompareWithLatestForceResolve, localManifests, hasMultipleSources)
@@ -1494,7 +1501,6 @@ func (ctrl *ApplicationController) processAppRefreshQueueItem() (processNext boo
 	} else {
 		app.Status.Summary = tree.GetSummary(app)
 	}
-
 	if project.Spec.SyncWindows.Matches(app).CanSync(false) {
 		syncErrCond, opMS := ctrl.autoSync(app, compareResult.syncStatus, compareResult.resources)
 		setOpMs = opMS
@@ -1511,6 +1517,9 @@ func (ctrl *ApplicationController) processAppRefreshQueueItem() (processNext boo
 		}
 	} else {
 		logCtx.Info("Sync prevented by sync window")
+		if app.Operation != nil {
+			logCtx.Info("Thober35 Operation not null")
+		}
 	}
 
 	if app.Status.ReconciledAt == nil || comparisonLevel >= CompareWithLatest {
@@ -1525,7 +1534,21 @@ func (ctrl *ApplicationController) processAppRefreshQueueItem() (processNext boo
 	app.Status.SourceType = compareResult.appSourceType
 	app.Status.SourceTypes = compareResult.appSourceTypes
 	app.Status.ControllerNamespace = ctrl.namespace
-	patchMs = ctrl.persistAppStatus(origApp, &app.Status)
+
+	//app.Status.OperationState.Operation.Sync.Revision = "sdksjslkjdasöklkdja"
+	//app.Status.OperationState.Operation.Sync.SyncStrategy = &appv1.SyncStrategy{}
+	//app.Status.OperationState.Operation.Sync.SyncStrategy.Hook = &appv1.SyncStrategyHook{SyncStrategyApply: *&appv1.SyncStrategyApply{Force: false}}
+	//app.Status.OperationState.Operation.Sync.Prune = false
+	//app.Status.OperationState.Operation.InitiatedBy.Automated = false
+	//app.Status.OperationState.Operation.InitiatedBy.Username = ""
+	//app.Status.OperationState.Operation.Info = nil
+	//app.Status.OperationState.Operation.Sync.SyncStrategy = &appv1.SyncStrategy{
+	//	Apply: nil,
+	//	Hook: &appv1.SyncStrategyHook{
+	//		SyncStrategyApply: *&appv1.SyncStrategyApply{Force: false},
+	//	},
+	//}
+	patchMs = ctrl.persistAppStatus(origApp, &app.Status) // TODO: 13:50
 	return
 }
 
@@ -1646,6 +1669,10 @@ func (ctrl *ApplicationController) persistAppStatus(orig *appv1.Application, new
 		message := fmt.Sprintf("Updated sync status: %s -> %s", orig.Status.Sync.Status, newStatus.Sync.Status)
 		ctrl.auditLogger.LogAppEvent(orig, argo.EventInfo{Reason: argo.EventReasonResourceUpdated, Type: v1.EventTypeNormal}, message, "")
 	}
+	//orig.Spec.SyncPolicy.Automated = &appv1.SyncPolicyAutomated{}
+	//orig.Spec.SyncPolicy.Automated.AllowEmpty = false
+	//orig.Spec.SyncPolicy.Automated.Prune = true
+	//orig.Spec.SyncPolicy.Automated.SelfHeal = true
 	if orig.Status.Health.Status != newStatus.Health.Status {
 		message := fmt.Sprintf("Updated health status: %s -> %s", orig.Status.Health.Status, newStatus.Health.Status)
 		ctrl.auditLogger.LogAppEvent(orig, argo.EventInfo{Reason: argo.EventReasonResourceUpdated, Type: v1.EventTypeNormal}, message, "")
@@ -1674,8 +1701,9 @@ func (ctrl *ApplicationController) persistAppStatus(orig *appv1.Application, new
 	defer func() {
 		patchMs = time.Since(start)
 	}()
-	appClient := ctrl.applicationClientset.ArgoprojV1alpha1().Applications(orig.Namespace)
+	appClient := ctrl.applicationClientset.ArgoprojV1alpha1().Applications(orig.Namespace) // TODO: here important
 	_, err = appClient.Patch(context.Background(), orig.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	// return the err here
 	if err != nil {
 		logCtx.Warnf("Error updating application: %v", err)
 	} else {
@@ -2013,7 +2041,7 @@ func (ctrl *ApplicationController) newApplicationInformerAndLister() (cache.Shar
 					compareWith = CompareWithLatest.Pointer()
 				}
 				ctrl.requestAppRefresh(newApp.QualifiedName(), compareWith, nil)
-				ctrl.appOperationQueue.Add(key)
+				ctrl.appOperationQueue.Add(key) // TODO: 231130 FAULTY CORRECT
 			},
 			DeleteFunc: func(obj interface{}) {
 				if !ctrl.canProcessApp(obj) {
